@@ -1,0 +1,21 @@
+{
+  "name": "histograph-db-elasticsearch",
+  "version": "0.0.5",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "standard"
+  },
+  "author": "Bert Spaan",
+  "license": "MIT",
+  "dependencies": {
+    "elasticsearch": "^10.1.3",
+    "highland": "^2.6.0",
+    "histograph-config": "nypl-spacetime/histograph-config",
+    "histograph-uri-normalizer": "histograph/uri-normalizer",
+    "turf-extent": "^1.0.4"
+  },
+  "devDependencies": {
+    "standard": "^6.0.7"
+  }
+}

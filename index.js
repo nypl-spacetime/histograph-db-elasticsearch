@@ -178,19 +178,9 @@ module.exports.search = function (params, callback) {
     index: index,
     body: query
   }).then(function (resp) {
-    callback(null, resp.hits.hits.map(function (hit) {
-      if (onlyIds) {
-        return hit._id
-      } else {
-        var source = hit._source
-
-        // Core currently stores data field as stringified JSON
-        if (source.data) {
-          source.data = JSON.parse(source.data)
-        }
-
-        return source
-      }
+    // TODO: convert IDs + URIs
+    callback(null, resp.hits.hits.map((hit) => {
+      return Object.assign({dataset: hit._index}, hit._source)
     }))
   },
 
@@ -278,9 +268,9 @@ function toElastic (message) {
     // turf.extent returns bounding box array, in west, south, east, north order
     var extent = turf.extent(message.data.geometry)
 
-    // The Elasticsearch geo_point type expects [lat, lon] arrays
-    message.data.northWest = [extent[3], extent[0]]
-    message.data.southEast = [extent[1], extent[2]]
+    // The Elasticsearch geo_point type expects [lon, lat] arrays
+    message.data.northWest = [extent[0], extent[3]]
+    message.data.southEast = [extent[2], extent[1]]
   }
 
   var actionDesc = {}

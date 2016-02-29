@@ -17,18 +17,11 @@ module.exports = {
       'dynamic': false,
       'properties': {
         'northWest': {
-          'type': 'geo_point',
-          'lat_lon': true
+          'type': 'geo_point'
         },
         'southEast': {
-          'type': 'geo_point',
-          'lat_lon': true
+          'type': 'geo_point'
         },
-        // 'geometry': {
-        //   'type': 'geo_shape',
-        //   'tree': 'geohash',
-        //   'tree_levels': 20
-        // },
         'uri': {
           'index': 'not_analyzed',
           'type': 'string'

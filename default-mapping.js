@@ -23,17 +23,17 @@ module.exports = {
           'type': 'geo_point'
         },
         'uri': {
-          'index': 'not_analyzed',
-          'type': 'string'
+          'type': 'string',
+          'index': 'not_analyzed'
         },
         'id': {
+          'type': 'string',
           'index': 'not_analyzed',
-          'store': true,
-          'type': 'string'
+          'store': true
         },
         'type': {
-          'index': 'not_analyzed',
-          'type': 'string'
+          'type': 'string',
+          'index': 'not_analyzed'
         },
         'name': {
           'fields': {
@@ -51,16 +51,16 @@ module.exports = {
           'type': 'string'
         },
         'dataset': {
-          'index': 'not_analyzed',
-          'type': 'string'
+          'type': 'string',
+          'index': 'not_analyzed'
         },
         'validSince': {
-          'format': 'date_optional_time',
-          'type': 'date'
+          'type': 'date',
+          'format': 'date_optional_time'
         },
         'validUntil': {
-          'format': 'date_optional_time',
-          'type': 'date'
+          'type': 'date',
+          'format': 'date_optional_time'
         }
       }
     }

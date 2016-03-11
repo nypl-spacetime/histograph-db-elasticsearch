@@ -1,14 +1,15 @@
 var config = require('histograph-config')
 var H = require('highland')
+var R = require('ramda')
 var elasticsearch = require('elasticsearch')
 var esClient = new elasticsearch.Client({
   host: config.elasticsearch.host + ':' + config.elasticsearch.port
 })
-var defaultMapping = require('./default-mapping')
-var normalize = require('histograph-uri-normalizer').normalize
 var turf = {
   extent: require('turf-extent')
 }
+
+var defaultMapping = require('./default-mapping')
 
 var pageSize = 100
 
@@ -189,64 +190,119 @@ module.exports.search = function (params, callback) {
   })
 }
 
-// Create named index
-var createIndex = H.wrapCallback(esClient.indices.create.bind(esClient.indices))
-
-module.exports.bulk = function (messages, callback) {
-  var pitMessages = messages
-    .filter((i) => i.type === 'pit')
-
-  if (pitMessages.length) {
-    H(pitMessages)
-      .map((i) => i.dataset)
-      .uniq()
-      .map(function (dataset) {
-        // Create ES index for each dataset
-        // turn name into options for `esClient.indices.create`
-        return {
-          index: dataset,
-          body: defaultMapping
-        }
-      })
-      .map(createIndex)
-      .series()
-      .errors(function (err) {
-        if (err && err.message.includes('index_already_exists_exception')) {
-          console.log('Index already exists — this is fine! 🚜')
-        } else {
-          console.log('Failed creating index')
-          console.error(err, err && err.message)
-        }
-      })
-      .collect()
-      .each(function () {
-        // Tell it
-        console.log('Created all indices!')
-
-        H(pitMessages)
-          .map(toElastic)
-          .flatten()
-          .toArray((bulkOperations) => {
-            if (bulkOperations.length) {
-              esClient.bulk({body: bulkOperations}, function (err, resp) {
-                var r = resp || {took: 0, errors: false, items: []}
-                var length = (r.items && r.items.length) || 0
-                console.log('Elasticsearch => %d indexed, took %dms, errors: %s', length, r.took, r.errors)
-                callback(err)
-              })
-            } else {
-              callback()
-            }
-          })
-      })
-  } else {
-    callback()
+const contextTypeToESMapping = {
+  'xsd:string': {
+    type: 'string'
+  },
+  'xsd:boolean': {
+    type: 'boolean'
+  },
+  'xsd:date': {
+    type: 'date',
+    format: 'date_optional_time'
+  },
+  'xsd:integer': {
+    type: 'integer'
+  },
+  'xsd:double': {
+    type: 'double'
   }
 }
 
+function getMapping (message) {
+  var mapping = Object.assign({}, defaultMapping)
+
+  var context = message.payload['@context']
+  if (context) {
+    var pairs = Object.keys(context)
+      .filter((key) => context[key]['@type'])
+      .map((key) => {
+        var type = context[key]['@type']
+        if (contextTypeToESMapping[type]) {
+          return [
+            key,
+            contextTypeToESMapping[type]
+          ]
+        } else {
+          return null
+        }
+      })
+
+    var properties = R.fromPairs(pairs)
+
+    mapping.mappings['_default_'].properties.data = {
+      type: 'nested',
+      include_in_parent: true,
+      properties: properties
+    }
+  }
+
+  return mapping
+}
+
+// Curried ES functions
+var createIndex = R.curry(esClient.indices.create.bind(esClient.indices))
+var deleteIndex = R.curry(esClient.indices.delete.bind(esClient.indices))
+
+module.exports.bulk = function (messages, callback) {
+  var functions = []
+  var pitMessages = []
+
+  var elasticBulk = (pitMessages) => {
+    if (pitMessages.length) {
+      return (callback) => {
+        esClient.bulk({body: R.flatten(pitMessages.map(toElastic))}, function (err, resp) {
+          var r = resp || {took: 0, errors: false, items: []}
+          var length = (r.items && r.items.length) || 0
+          console.log('Elasticsearch => %d indexed, took %dms, errors: %s', length, r.took, r.errors)
+          callback(err)
+        })
+      }
+    }
+    return []
+  }
+
+  messages
+    .filter((message) => message.type === 'pit' || message.type === 'dataset')
+    .forEach((message) => {
+      if (message.type === 'pit') {
+        pitMessages.push(message)
+      } else if (message.type === 'dataset') {
+        functions = R.concat(functions, elasticBulk(pitMessages))
+
+        // Reset pitMessages
+        pitMessages = []
+
+        if (message.action === 'create') {
+          let f = createIndex({
+            index: message.payload.id,
+            body: getMapping(message)
+          }, R.__)
+
+          functions.push(f)
+        } else if (message.action === 'delete') {
+          let f = deleteIndex({
+            index: message.payload.id
+          }, R.__)
+
+          functions.push(f)
+        }
+      }
+    })
+
+  functions = R.concat(functions, elasticBulk(pitMessages))
+
+  H(functions)
+    .nfcall([])
+    .series()
+    .done(() => {
+      callback()
+    })
+}
+
 // Index into elasticsearch
-var OP_MAP = {
-  add: 'index',
+const OP_MAP = {
+  create: 'index',
   update: 'index',
   delete: 'delete'
 }
@@ -258,33 +314,28 @@ function toElastic (message) {
 
   // { "action": { _index ... } , see
   // https://www.elastic.co/guide/en/elasticsearch/client/javascript-api/current/api-reference-2-0.html
-
-  // normalize id
-  var id = normalize(message.data.id || message.data.uri, message.dataset)
-  message.data.id = id
-  delete message.data.uri
-
-  if (message.data.geometry) {
+  //
+  if (message.payload.geometry) {
     // turf.extent returns bounding box array, in west, south, east, north order
-    var extent = turf.extent(message.data.geometry)
+    var extent = turf.extent(message.payload.geometry)
 
     // The Elasticsearch geo_point type expects [lon, lat] arrays
-    message.data.northWest = [extent[0], extent[3]]
-    message.data.southEast = [extent[2], extent[1]]
+    message.payload.northWest = [extent[0], extent[3]]
+    message.payload.southEast = [extent[2], extent[1]]
   }
 
   var actionDesc = {}
   actionDesc[operation] = {
-    _index: message.dataset,
-    _type: message.data.type,
-    _id: message.data.id
+    _index: message.meta.dataset,
+    _type: message.payload.type,
+    _id: message.payload.id
   }
 
   var bulkOperations = [actionDesc]
 
-  // when removing no document is needed
+  // When removing no document is needed
   if (message.action !== 'delete') {
-    bulkOperations.push(message.data)
+    bulkOperations.push(message.payload)
   }
 
   return bulkOperations

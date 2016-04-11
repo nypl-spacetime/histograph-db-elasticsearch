@@ -1,6 +1,6 @@
 'use strict'
 
-var config = require('histograph-config')
+var config = require('spacetime-config')
 var H = require('highland')
 var R = require('ramda')
 var elasticsearch = require('elasticsearch')
@@ -8,6 +8,7 @@ var esClient = new elasticsearch.Client({
   host: config.elasticsearch.host + ':' + config.elasticsearch.port
 })
 var turf = {
+  centroid: require('turf-centroid'),
   extent: require('turf-extent')
 }
 
@@ -33,6 +34,27 @@ function baseQuery () {
       }
     }
   }
+}
+
+module.exports.query = function (params, callback) {
+  esClient.search(params).then(function (resp) {
+    callback(null, resp)
+  },
+
+  function (err) {
+    callback(err)
+  })
+}
+
+module.exports.delete = function (indices, callback) {
+  var index = '*'
+  if (indices) {
+    index = indices.join(',')
+  }
+
+  esClient.indices.delete({
+    index: index
+  }, callback)
 }
 
 module.exports.search = function (params, callback) {
@@ -255,6 +277,8 @@ module.exports.bulk = function (messages, callback) {
       return (callback) => {
         esClient.bulk({body: R.flatten(pitMessages.map(toElastic))}, function (err, resp) {
           var r = resp || {took: 0, errors: false, items: []}
+          // TODO: doe iets met de errors
+          // console.log(err, JSON.stringify(resp))
           var length = (r.items && r.items.length) || 0
           console.log('Elasticsearch => %d indexed, took %dms, errors: %s', length, r.took, r.errors)
           callback(err)
@@ -318,10 +342,14 @@ function toElastic (message) {
   // https://www.elastic.co/guide/en/elasticsearch/client/javascript-api/current/api-reference-2-0.html
   //
   if (message.payload.geometry) {
+    // turf.centroid returns a GeoJSON Point Feature, with coordinates in lon, lat order
+    var centroid = turf.centroid(message.payload.geometry).geometry.coordinates
+
     // turf.extent returns bounding box array, in west, south, east, north order
     var extent = turf.extent(message.payload.geometry)
 
     // The Elasticsearch geo_point type expects [lon, lat] arrays
+    message.payload.centroid = centroid
     message.payload.northWest = [extent[0], extent[3]]
     message.payload.southEast = [extent[2], extent[1]]
   }

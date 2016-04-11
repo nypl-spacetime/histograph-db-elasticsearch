@@ -22,6 +22,9 @@ module.exports = {
         'southEast': {
           'type': 'geo_point'
         },
+        'centroid': {
+          'type': 'geo_point'
+        },
         'uri': {
           'type': 'string',
           'index': 'not_analyzed'

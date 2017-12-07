@@ -9,6 +9,10 @@ const turf = {
   bbox: require('@turf/bbox')
 }
 
+// module.exports.client = function () {
+
+// }
+
 if (!config.elasticsearch || !config.elasticsearch.host || !config.elasticsearch.port) {
   throw new Error('Please specify elasticsearch.host and elasticsearch.port in the NYC Space/Time Directory configuration file')
 }
@@ -25,25 +29,57 @@ function baseQuery () {
   return {
     size: pageSize,
     query: {
-      filtered: {
-        filter: {
-          bool: {
-            must: []
-          }
-        },
-        query: {
-          bool: {
-            must: []
-          }
-        }
+      bool: {
+        must: []
       }
     }
   }
 }
 
+module.exports.updateAliases = function (indexOld, indexNew, alias, callback) {
+  esClient.indices.updateAliases({
+    body: {
+      actions: [
+        {
+          remove: {
+            index: indexOld,
+            alias
+          }
+        },
+        {
+          add: {
+            index: indexNew,
+            alias
+          }
+        }
+      ]
+    }
+  }, callback)
+}
+
+module.exports.putAlias = function (index, alias, callback) {
+  esClient.indices.putAlias({
+    index,
+    name: alias
+  }, callback)
+}
+
+module.exports.getAliasedIndex = function (alias, callback) {
+  esClient.indices.getAlias({
+    name: alias
+  }, (err, response) => {
+    if (err) {
+      callback(err)
+    } else {
+      callback(null, Object.keys(response)[0])
+    }
+  })
+}
+
 module.exports.query = function (params, callback) {
   esClient.search(params)
     .then((resp) => callback(null, resp), callback)
+    .catch(callback)
 }
 
 module.exports.delete = function (indices, callback) {
@@ -65,11 +101,11 @@ module.exports.search = function (params, callback) {
   }
 
   let index = '*'
-  if (params.dataset) {
-    index = params.dataset.join(',')
+  if (params.datasetIds) {
+    // index = params.datasetIds.join(',')
   }
 
-  const query = baseQuery()
+  let query = baseQuery()
 
   if (onlyIds) {
     query._source = [
@@ -77,10 +113,64 @@ module.exports.search = function (params, callback) {
     ]
   }
 
-  if (params.name) {
-    var field = 'name.' + (params.exact ? 'exact' : 'analyzed')
+  if (params.id) {
+    // query.size = 1
+    // query.query.bool.must.push({
+    //   constant_score: {
+    //     filter: {
+    //       term: {
+    //         // 'data.objects.id': params.id
+    //         // 'data.objects.id': 'addresses/154887-1'
+    //         'data.objects.dataset': 'addresses'
+    //       }
+    //     }
+    //   }
+    // })
 
-    query.query.filtered.query.bool.must.push({
+    query = {
+      query: {
+        nested: {
+          path: 'data',
+          query: {
+            nested: {
+              path: 'objects',
+              query: {
+                bool: {
+                  must: [
+                      { "match" : {"data.object.dataset" : "addresses"} },
+
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // query.query.bool.must.push({
+    //   nested: {
+    //     path: 'data',
+    //     query: {
+    //       nested: {
+    //         path: 'data.objects',
+    //         filter: {
+    //           term: {
+    //             'data.objects.dataset': 'addresses'
+    //           }
+    //         }
+    //       }
+    //     }
+    //   }
+    // })
+  }
+
+  console.log(query)
+
+  if (params.name) {
+    const field = 'name.' + (params.exact ? 'exact' : 'analyzed')
+
+    query.query.bool.must.push({
       query_string: {
         query: params.name,
         fields: [
@@ -90,64 +180,102 @@ module.exports.search = function (params, callback) {
     })
   }
 
-  var id = params.uri || params.id
-  if (id) {
-    query.query.filtered.filter.bool.must.push({
-      term: {
-        _id: id
+  // var id = params.uri || params.id
+  // if (id) {
+  //   query.query.filtered.filter.bool.must.push({
+  //     term: {
+  //       _id: id
+  //     }
+  //   })
+  // }
+
+  if (params.type) {
+    const types = params.type.map((type) => ({
+      type: {
+        value: type
+      }
+    }))
+
+    query.query.bool.must.push({
+      bool: {
+        should: types
       }
     })
   }
 
-  if (params.type) {
-    query.query.filtered.filter.bool.must.push({
-      or: params.type.map(function (type) {
-        return {
-          type: {
-            value: type
+  if (params.geometry) {
+    query.query.bool.must.push({
+      bool: {
+        should: [
+          {
+            geo_bounding_box: {
+              northWest: {
+                top_left: {
+                  lat: params.geometry[0][1],
+                  lon: params.geometry[0][0]
+                },
+                bottom_right: {
+                  lat: params.geometry[1][1],
+                  lon: params.geometry[1][0]
+                }
+              }
+            }
+          },
+          {
+            geo_bounding_box: {
+              southEast: {
+                top_left: {
+                  lat: params.geometry[0][1],
+                  lon: params.geometry[0][0]
+                },
+                bottom_right: {
+                  lat: params.geometry[1][1],
+                  lon: params.geometry[1][0]
+                }
+              }
+            }
           }
-        }
-      })
+        ]
+      }
     })
   }
 
-  if (params.intersects) {
-    query.query.filtered.filter.bool.must.push({
-      or: [
-        {
-          geo_bounding_box: {
-            northWest: {
-              top_left: {
-                lat: params.intersects[0][1],
-                lon: params.intersects[0][0]
-              },
-              bottom_right: {
-                lat: params.intersects[1][1],
-                lon: params.intersects[1][0]
-              }
-            }
-          }
-        },
-        {
-          geo_bounding_box: {
-            southEast: {
-              top_left: {
-                lat: params.intersects[0][1],
-                lon: params.intersects[0][0]
-              },
-              bottom_right: {
-                lat: params.intersects[1][1],
-                lon: params.intersects[1][0]
-              }
-            }
-          }
-        }
-      ]
-    })
-  }
+  //   query.query.filtered.filter.bool.must.push({
+  //     or: [
+  //       {
+  //         geo_bounding_box: {
+  //           northWest: {
+  //             top_left: {
+  //               lat: params.intersects[0][1],
+  //               lon: params.intersects[0][0]
+  //             },
+  //             bottom_right: {
+  //               lat: params.intersects[1][1],
+  //               lon: params.intersects[1][0]
+  //             }
+  //           }
+  //         }
+  //       },
+  //       {
+  //         geo_bounding_box: {
+  //           southEast: {
+  //             top_left: {
+  //               lat: params.intersects[0][1],
+  //               lon: params.intersects[0][0]
+  //             },
+  //             bottom_right: {
+  //               lat: params.intersects[1][1],
+  //               lon: params.intersects[1][0]
+  //             }
+  //           }
+  //         }
+  //       }
+  //     ]
+  //   })
+  // }
 
   if (params.contains) {
-    query.query.filtered.filter.bool.must.push(
+    query.query.bool.must.push(
       {
         geo_bounding_box: {
           northWest: {
@@ -179,35 +307,39 @@ module.exports.search = function (params, callback) {
     )
   }
 
-  if (params.before) {
-    query.query.filtered.query.bool.must.push({
-      range: {
-        validSince: {
-          lte: params.before
-        }
-      }
-    })
-  }
+  // if (params.before) {
+  //   query.query.bool.must.push({
+  //     range: {
+  //       validSince: {
+  //         lte: params.before
+  //       }
+  //     }
+  //   })
+  // }
 
-  if (params.after) {
-    query.query.filtered.query.bool.must.push({
-      range: {
-        validUntil: {
-          gte: params.after
-        }
-      }
-    })
-  }
+  // if (params.after) {
+  //   query.query.bool.must.push({
+  //     range: {
+  //       validUntil: {
+  //         gte: params.after
+  //       }
+  //     }
+  //   })
+  // }
+
+  console.log(JSON.stringify(query, null, 2))
 
   esClient.search({
     index: index,
     body: query
   }).then((response) => {
     // TODO: convert IDs + URIs
+    console.log(response)
     callback(null, response.hits.hits.map((hit) => {
       return Object.assign({dataset: hit._index}, hit._source)
     }))
-  }, callback)
+  })
+  .catch(callback)
 }
 
 const contextTypeToESMapping = {

@@ -1,6 +1,6 @@
 {
   "name": "spacetime-db-elasticsearch",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Bulk import and query functions for the Elasticsearch index of the NYC Space/Time Directory",
   "main": "index.js",
   "scripts": {

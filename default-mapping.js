@@ -58,7 +58,7 @@ module.exports = {
               dynamic: false,
               type: 'nested',
               properties: {
-                dataset: {
+                id: {
                   type: 'string',
                   index: 'not_analyzed'
                 },

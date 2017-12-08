@@ -4,6 +4,7 @@ const R = require('ramda')
 const H = require('highland')
 const config = require('spacetime-config')
 const elasticsearch = require('elasticsearch')
+const fuzzyDates = require('fuzzy-dates')
 const turf = {
   centroid: require('@turf/centroid'),
   bbox: require('@turf/bbox')
@@ -510,6 +511,16 @@ function toElasticOperation (message) {
     message.payload.centroid = centroid
     message.payload.northWest = [bbox[0], bbox[3]]
     message.payload.southEast = [bbox[2], bbox[1]]
+  }
+
+  if (message.payload.validSince) {
+    const validSince = fuzzyDates.convert(message.payload.validSince)[0]
+    message.payload.validSince = validSince
+  }
+
+  if (message.payload.validUntil) {
+    const validUntil = fuzzyDates.convert(message.payload.validUntil)[1]
+    message.payload.validSince = validUntil
   }
 
   const actionDesc = {

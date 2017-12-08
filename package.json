@@ -16,6 +16,7 @@
     "@turf/bbox": "^4.0.0",
     "@turf/centroid": "^4.0.0",
     "elasticsearch": "^13.0.0-rc1",
+    "fuzzy-dates": "github:nypl-spacetime/fuzzy-dates",
     "highland": "^2.10.5",
     "ramda": "^0.23.0",
     "spacetime-config": "nypl-spacetime/spacetime-config"

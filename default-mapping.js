@@ -22,6 +22,12 @@ module.exports = {
         southEast: {
           type: 'geo_point'
         },
+        northEast: {
+          type: 'geo_point'
+        },
+        southWest: {
+          type: 'geo_point'
+        },
         centroid: {
           type: 'geo_point'
         },

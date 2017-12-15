@@ -1,5 +1,3 @@
-'use strict'
-
 const R = require('ramda')
 const H = require('highland')
 const config = require('spacetime-config')
@@ -10,10 +8,6 @@ const turf = {
   bbox: require('@turf/bbox')
 }
 
-// module.exports.client = function () {
-
-// }
-
 if (!config.elasticsearch || !config.elasticsearch.host || !config.elasticsearch.port) {
   throw new Error('Please specify elasticsearch.host and elasticsearch.port in the NYC Space/Time Directory configuration file')
 }
@@ -23,19 +17,6 @@ const esClient = new elasticsearch.Client({
 })
 
 const defaultMapping = require('./default-mapping')
-
-const pageSize = 100
-
-function baseQuery () {
-  return {
-    size: pageSize,
-    query: {
-      bool: {
-        must: []
-      }
-    }
-  }
-}
 
 module.exports.updateAliases = function (indexOld, indexNew, alias, callback) {
   esClient.indices.updateAliases({
@@ -94,303 +75,8 @@ module.exports.delete = function (indices, callback) {
   }, callback)
 }
 
-module.exports.search = function (params, callback) {
-  const onlyIds = false
-
-  if (!params) {
-    params = {}
-  }
-
-  let index = '*'
-  if (params.datasetIds) {
-    // index = params.datasetIds.join(',')
-  }
-
-  let query = baseQuery()
-
-  if (onlyIds) {
-    query._source = [
-      '_id'
-    ]
-  }
-
-  if (params.id) {
-    // query.size = 1
-    // query.query.bool.must.push({
-    //   constant_score: {
-    //     filter: {
-    //       term: {
-    //         // 'data.objects.id': params.id
-    //         // 'data.objects.id': 'addresses/154887-1'
-    //         'data.objects.dataset': 'addresses'
-    //       }
-    //     }
-    //   }
-    // })
-
-    query = {
-      query: {
-        nested: {
-          path: 'data',
-          query: {
-            nested: {
-              path: 'objects',
-              query: {
-                bool: {
-                  must: [
-                      { "match" : {"data.object.dataset" : "addresses"} },
-
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // query.query.bool.must.push({
-    //   nested: {
-    //     path: 'data',
-    //     query: {
-    //       nested: {
-    //         path: 'data.objects',
-    //         filter: {
-    //           term: {
-    //             'data.objects.dataset': 'addresses'
-    //           }
-    //         }
-    //       }
-    //     }
-    //   }
-    // })
-  }
-
-  console.log(query)
-
-  if (params.name) {
-    const field = 'name.' + (params.exact ? 'exact' : 'analyzed')
-
-    query.query.bool.must.push({
-      query_string: {
-        query: params.name,
-        fields: [
-          field
-        ]
-      }
-    })
-  }
-
-  // var id = params.uri || params.id
-  // if (id) {
-  //   query.query.filtered.filter.bool.must.push({
-  //     term: {
-  //       _id: id
-  //     }
-  //   })
-  // }
-
-  if (params.type) {
-    const types = params.type.map((type) => ({
-      type: {
-        value: type
-      }
-    }))
-
-    query.query.bool.must.push({
-      bool: {
-        should: types
-      }
-    })
-  }
-
-  if (params.geometry) {
-    query.query.bool.must.push({
-      bool: {
-        should: [
-          {
-            geo_bounding_box: {
-              northWest: {
-                top_left: {
-                  lat: params.geometry[0][1],
-                  lon: params.geometry[0][0]
-                },
-                bottom_right: {
-                  lat: params.geometry[1][1],
-                  lon: params.geometry[1][0]
-                }
-              }
-            }
-          },
-          {
-            geo_bounding_box: {
-              southEast: {
-                top_left: {
-                  lat: params.geometry[0][1],
-                  lon: params.geometry[0][0]
-                },
-                bottom_right: {
-                  lat: params.geometry[1][1],
-                  lon: params.geometry[1][0]
-                }
-              }
-            }
-          }
-        ]
-      }
-    })
-  }
-
-  //   query.query.filtered.filter.bool.must.push({
-  //     or: [
-  //       {
-  //         geo_bounding_box: {
-  //           northWest: {
-  //             top_left: {
-  //               lat: params.intersects[0][1],
-  //               lon: params.intersects[0][0]
-  //             },
-  //             bottom_right: {
-  //               lat: params.intersects[1][1],
-  //               lon: params.intersects[1][0]
-  //             }
-  //           }
-  //         }
-  //       },
-  //       {
-  //         geo_bounding_box: {
-  //           southEast: {
-  //             top_left: {
-  //               lat: params.intersects[0][1],
-  //               lon: params.intersects[0][0]
-  //             },
-  //             bottom_right: {
-  //               lat: params.intersects[1][1],
-  //               lon: params.intersects[1][0]
-  //             }
-  //           }
-  //         }
-  //       }
-  //     ]
-  //   })
-  // }
-
-  if (params.contains) {
-    query.query.bool.must.push(
-      {
-        geo_bounding_box: {
-          northWest: {
-            top_left: {
-              lat: params.contains[0][1],
-              lon: params.contains[0][0]
-            },
-            bottom_right: {
-              lat: params.contains[1][1],
-              lon: params.contains[1][0]
-            }
-          }
-        }
-      },
-      {
-        geo_bounding_box: {
-          southEast: {
-            top_left: {
-              lat: params.contains[0][1],
-              lon: params.contains[0][0]
-            },
-            bottom_right: {
-              lat: params.contains[1][1],
-              lon: params.contains[1][0]
-            }
-          }
-        }
-      }
-    )
-  }
-
-  // if (params.before) {
-  //   query.query.bool.must.push({
-  //     range: {
-  //       validSince: {
-  //         lte: params.before
-  //       }
-  //     }
-  //   })
-  // }
-
-  // if (params.after) {
-  //   query.query.bool.must.push({
-  //     range: {
-  //       validUntil: {
-  //         gte: params.after
-  //       }
-  //     }
-  //   })
-  // }
-
-  console.log(JSON.stringify(query, null, 2))
-
-  esClient.search({
-    index: index,
-    body: query
-  }).then((response) => {
-    // TODO: convert IDs + URIs
-    console.log(response)
-    callback(null, response.hits.hits.map((hit) => {
-      return Object.assign({dataset: hit._index}, hit._source)
-    }))
-  })
-  .catch(callback)
-}
-
-const contextTypeToESMapping = {
-  'xsd:string': {
-    type: 'string'
-  },
-  'xsd:boolean': {
-    type: 'boolean'
-  },
-  'xsd:date': {
-    type: 'date',
-    format: 'date_optional_time'
-  },
-  'xsd:integer': {
-    type: 'integer'
-  },
-  'xsd:double': {
-    type: 'double'
-  }
-}
-
 function getMapping (message) {
-  let mapping = Object.assign({}, defaultMapping)
-
-  const context = message.payload.jsonldContext
-  if (context) {
-    var pairs = Object.keys(context)
-      .filter((key) => context[key]['@type'])
-      .map((key) => {
-        var type = context[key]['@type']
-        if (contextTypeToESMapping[type]) {
-          return [
-            key,
-            contextTypeToESMapping[type]
-          ]
-        } else {
-          return null
-        }
-      })
-
-    const properties = R.fromPairs(pairs)
-
-    mapping.mappings['_default_'].properties.data = {
-      type: 'nested',
-      include_in_parent: true,
-      properties: properties
-    }
-  }
-
-  return mapping
+  return Object.assign({}, defaultMapping)
 }
 
 // Curried ES functions
@@ -511,6 +197,8 @@ function toElasticOperation (message) {
     message.payload.centroid = centroid
     message.payload.northWest = [bbox[0], bbox[3]]
     message.payload.southEast = [bbox[2], bbox[1]]
+    message.payload.southWest = [bbox[2], bbox[3]]
+    message.payload.northEast = [bbox[0], bbox[1]]
   }
 
   if (message.payload.validSince) {
@@ -520,7 +208,7 @@ function toElasticOperation (message) {
 
   if (message.payload.validUntil) {
     const validUntil = fuzzyDates.convert(message.payload.validUntil)[1]
-    message.payload.validSince = validUntil
+    message.payload.validUntil = validUntil
   }
 
   const actionDesc = {
